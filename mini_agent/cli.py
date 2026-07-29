@@ -28,6 +28,7 @@ def _help_text() -> str:
             "/current                    查看当前 Session",
             "/trace                      查看当前 Session 最近一条 Trace",
             "/trace <trace_id>           查看指定 Trace",
+            "/compact                    手动压缩当前 Session",
             "/exit                       退出",
         ]
     )
@@ -136,6 +137,29 @@ def run_cli(
                         f"Step {step.step_number}.{step.event_index} "
                         f"{step.event_type}{name} {step.status}{duration}{error}"
                     )
+                continue
+            if command == "/compact":
+                compact_trace_id = application.trace_recorder.start(
+                    user_id=owner,
+                    session_id=current.id,
+                    user_input="/compact",
+                )
+                compacted = application.context_manager.manual_compact(
+                    owner,
+                    current.id,
+                    trace_id=compact_trace_id,
+                )
+                application.trace_recorder.complete(
+                    compact_trace_id,
+                    steps=0,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                )
+                status = "已完成压缩" if compacted.compressed else "没有可压缩的早期消息"
+                output_fn(
+                    f"{status}，当前估算 {compacted.estimated_tokens} tokens。"
+                )
+                output_fn(f"Trace ID: {compact_trace_id}")
                 continue
             if command.startswith("/"):
                 output_fn(f"未知命令：{command}。使用 /help 查看帮助。")

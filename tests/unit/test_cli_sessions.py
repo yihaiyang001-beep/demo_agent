@@ -69,3 +69,31 @@ def test_cli_trace_command_displays_latest_trace(tmp_path):
     assert "Status: completed" in joined
     assert "llm_decision" in joined
     assert "Tokens:" in joined
+
+
+def test_cli_manual_compact_command(tmp_path):
+    application = build_application(
+        Config(api_key="cli-test", db_path=str(tmp_path / "agent.db")),
+        llm_client=ScriptedLLM(
+            [
+                LLMResponse(content="first reply"),
+                LLMResponse(content="second reply"),
+                LLMResponse(content="manual summary"),
+            ]
+        ),
+    )
+    commands = iter(["first topic", "second topic", "/compact", "/exit"])
+    output = []
+
+    run_cli(
+        application,
+        user_id="user_a",
+        session_id="window_1",
+        input_fn=lambda _prompt: next(commands),
+        output_fn=output.append,
+    )
+
+    assert "已完成压缩" in "\n".join(output)
+    assert application.summary_repo.get("user_a", "window_1").summary == (
+        "manual summary"
+    )

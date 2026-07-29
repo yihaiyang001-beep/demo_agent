@@ -74,7 +74,14 @@ def build_application(
         config,
         on_retry=trace_recorder.record_retry,
     )
-    context_manager = ContextManager(message_repo=message_repo)
+    context_manager = ContextManager(
+        config=config,
+        llm_client=active_llm_client,
+        message_repo=message_repo,
+        summary_repo=summary_repo,
+        tool_registry=registry,
+        trace_recorder=trace_recorder,
+    )
     runtime = AgentRuntime(
         config=config,
         session_service=session_service,

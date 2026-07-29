@@ -18,7 +18,9 @@ class TraceRecorder:
         sensitive_values: list[str] | None = None,
     ):
         self.repository = repository
-        self._sensitive_values = [value for value in (sensitive_values or []) if value]
+        self._sensitive_values = [
+            value for value in (sensitive_values or []) if len(value) >= 8
+        ]
         self._active_trace_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "active_trace_id",
             default=None,

@@ -77,7 +77,12 @@ class AgentRuntime:
             )
             for step_number in range(1, self.config.max_steps + 1):
                 completed_steps = step_number
-                context = self.context_manager.prepare(owner, current_session_id)
+                context = self.context_manager.prepare(
+                    owner,
+                    current_session_id,
+                    trace_id=trace_id,
+                    step_number=step_number,
+                )
                 self.trace_recorder.record_context(
                     trace_id,
                     step_number,
