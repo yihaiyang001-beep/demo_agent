@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from typing import Any
 
 from mini_agent.config import Config
@@ -57,13 +58,6 @@ class AgentRuntime:
         owner = session.user_id
         current_session_id = session.id
         content = user_input.strip()
-
-        self.message_repo.add_user_message(owner, current_session_id, content)
-        self.session_service.touch_and_set_title_if_empty(
-            owner,
-            current_session_id,
-            content,
-        )
         trace_id = self.trace_recorder.start(
             user_id=owner,
             session_id=current_session_id,
@@ -75,6 +69,12 @@ class AgentRuntime:
         completed_steps = 0
 
         try:
+            self.message_repo.add_user_message(owner, current_session_id, content)
+            self.session_service.touch_and_set_title_if_empty(
+                owner,
+                current_session_id,
+                content,
+            )
             for step_number in range(1, self.config.max_steps + 1):
                 completed_steps = step_number
                 context = self.context_manager.prepare(owner, current_session_id)
@@ -83,10 +83,14 @@ class AgentRuntime:
                     step_number,
                     context.estimated_tokens,
                 )
-                response = self.llm_client.chat(
-                    messages=context.messages,
-                    tools=self.tool_registry.schemas(),
-                )
+                self.trace_recorder.begin_llm_step(trace_id, step_number)
+                try:
+                    response = self.llm_client.chat(
+                        messages=context.messages,
+                        tools=self.tool_registry.schemas(),
+                    )
+                finally:
+                    self.trace_recorder.end_llm_step()
                 total_prompt_tokens += response.prompt_tokens
                 total_completion_tokens += response.completion_tokens
                 self.trace_recorder.record_llm_decision(
@@ -126,7 +130,7 @@ class AgentRuntime:
                     response.content or None,
                 )
                 for index, tool_call in enumerate(response.tool_calls):
-                    call_event_index = 2 + index * 2
+                    call_event_index = 3 + index * 2
                     self.trace_recorder.record_tool_call(
                         trace_id,
                         step_number,
@@ -219,6 +223,12 @@ class AgentRuntime:
             )
             raise
         except AgentError as exc:
+            self._record_failure_event(
+                trace_id,
+                completed_steps,
+                exc.code,
+                exc.internal_message,
+            )
             self.trace_recorder.fail(
                 trace_id,
                 status=exc.status,
@@ -237,6 +247,13 @@ class AgentRuntime:
                 completion_tokens=total_completion_tokens,
             )
         except Exception as exc:
+            internal_message = f"{type(exc).__name__}: {exc}"
+            self._record_failure_event(
+                trace_id,
+                completed_steps,
+                "INTERNAL_ERROR",
+                internal_message,
+            )
             self.trace_recorder.fail(
                 trace_id,
                 status="internal_error",
@@ -244,7 +261,7 @@ class AgentRuntime:
                 prompt_tokens=total_prompt_tokens,
                 completion_tokens=total_completion_tokens,
                 error_code="INTERNAL_ERROR",
-                error_message=f"{type(exc).__name__}: {exc}",
+                error_message=internal_message,
             )
             return AgentResult(
                 status="internal_error",
@@ -255,6 +272,24 @@ class AgentRuntime:
                 completion_tokens=total_completion_tokens,
             )
 
+    def _record_failure_event(
+        self,
+        trace_id: str,
+        step_number: int,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        with suppress(Exception):
+            self.trace_recorder.record_event(
+                trace_id,
+                step_number=max(0, step_number),
+                event_index=999,
+                event_type="runtime_error",
+                status="failed",
+                error_code=error_code,
+                error_message=error_message,
+            )
+
     @staticmethod
     def _validate_input(user_id: str, session_id: str, user_input: str) -> None:
         if not isinstance(user_id, str) or not user_id.strip():
@@ -263,4 +298,3 @@ class AgentRuntime:
             raise InvalidUserInputError("session_id is empty")
         if not isinstance(user_input, str) or not user_input.strip():
             raise InvalidUserInputError("user_input is empty")
-

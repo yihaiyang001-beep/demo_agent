@@ -69,8 +69,11 @@ def build_application(
         registry.register(WeatherTool(config))
         registry.register(TodoTool(todo_repo))
         registry.register(MockSearchTool())
-    active_llm_client = llm_client or DeepSeekClient(config)
-    trace_recorder = TraceRecorder(trace_repo)
+    trace_recorder = TraceRecorder(trace_repo, sensitive_values=[config.api_key])
+    active_llm_client = llm_client or DeepSeekClient(
+        config,
+        on_retry=trace_recorder.record_retry,
+    )
     context_manager = ContextManager(message_repo=message_repo)
     runtime = AgentRuntime(
         config=config,

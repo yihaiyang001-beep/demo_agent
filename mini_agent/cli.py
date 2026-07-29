@@ -26,6 +26,8 @@ def _help_text() -> str:
             "/sessions                   列出当前用户所有 Session",
             "/switch <session_id>        切换到已有 Session",
             "/current                    查看当前 Session",
+            "/trace                      查看当前 Session 最近一条 Trace",
+            "/trace <trace_id>           查看指定 Trace",
             "/exit                       退出",
         ]
     )
@@ -99,6 +101,41 @@ def run_cli(
                 continue
             if command == "/current":
                 output_fn(f"Current session: {current.id}")
+                continue
+            if command == "/trace":
+                trace = (
+                    application.trace_repo.get(argument)
+                    if argument
+                    else application.trace_repo.get_latest(owner, current.id)
+                )
+                if (
+                    trace is None
+                    or trace.user_id != owner
+                    or trace.session_id != current.id
+                ):
+                    output_fn("当前 Session 中未找到该 Trace。")
+                    continue
+                output_fn(
+                    f"Trace: {trace.id}\n"
+                    f"Status: {trace.status}\n"
+                    f"Session: {trace.session_id}\n"
+                    f"Tokens: {trace.total_prompt_tokens} prompt / "
+                    f"{trace.total_completion_tokens} completion"
+                )
+                for step in application.trace_repo.list_steps(trace.id):
+                    name = f" {step.name}" if step.name else ""
+                    duration = (
+                        f" duration={step.duration_ms}ms"
+                        if step.duration_ms is not None
+                        else ""
+                    )
+                    error = (
+                        f" error={step.error_code}" if step.error_code else ""
+                    )
+                    output_fn(
+                        f"Step {step.step_number}.{step.event_index} "
+                        f"{step.event_type}{name} {step.status}{duration}{error}"
+                    )
                 continue
             if command.startswith("/"):
                 output_fn(f"未知命令：{command}。使用 /help 查看帮助。")
