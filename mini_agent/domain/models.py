@@ -74,3 +74,85 @@ class ToolRuntimeContext:
     session_id: str
     trace_id: str
 
+
+@dataclass(frozen=True)
+class SessionRecord:
+    user_id: str
+    id: str
+    title: str | None
+    status: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class SessionView:
+    user_id: str
+    id: str
+    title: str | None
+    preview: str
+    status: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class MessageRecord:
+    id: int
+    user_id: str
+    session_id: str
+    role: str
+    content: str | None
+    tool_calls: list[dict[str, Any]] | None
+    tool_call_id: str | None
+    created_at: str
+
+    def to_api_message(self) -> dict[str, Any]:
+        message: dict[str, Any] = {"role": self.role, "content": self.content}
+        if self.role == "assistant" and self.tool_calls:
+            message["tool_calls"] = self.tool_calls
+        if self.role == "tool" and self.tool_call_id:
+            message["tool_call_id"] = self.tool_call_id
+        return message
+
+
+@dataclass(frozen=True)
+class SummaryRecord:
+    user_id: str
+    session_id: str
+    summary: str
+    summarized_until_message_id: int
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class TraceRecord:
+    id: str
+    user_id: str
+    session_id: str
+    user_input: str
+    status: str
+    total_steps: int
+    total_prompt_tokens: int
+    total_completion_tokens: int
+    started_at: str
+    finished_at: str | None
+    error_code: str | None
+    error_message: str | None
+
+
+@dataclass(frozen=True)
+class TraceStepRecord:
+    id: int
+    trace_id: str
+    step_number: int
+    event_index: int
+    event_type: str
+    name: str | None
+    input_data: dict[str, Any] | None
+    output_data: dict[str, Any] | None
+    status: str
+    duration_ms: int | None
+    error_code: str | None
+    error_message: str | None
+    created_at: str

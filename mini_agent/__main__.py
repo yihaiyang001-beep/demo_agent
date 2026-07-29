@@ -6,6 +6,7 @@ import argparse
 import json
 
 from .bootstrap import initialize_foundation
+from .cli import main as cli_main
 from .config import Config
 
 
@@ -16,13 +17,15 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="validate AGENT_* configuration and initialize the database",
     )
-    return parser.parse_args()
+    args, remaining = parser.parse_known_args()
+    args.remaining = remaining
+    return args
 
 
 def main() -> int:
     args = _parse_args()
     if not args.check:
-        raise SystemExit("The interactive CLI is not available yet. Run with --check.")
+        return cli_main(args.remaining)
 
     try:
         config = Config.from_env()
@@ -38,4 +41,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
