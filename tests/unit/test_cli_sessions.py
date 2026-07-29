@@ -3,11 +3,19 @@ from __future__ import annotations
 from mini_agent.bootstrap import build_application
 from mini_agent.cli import run_cli
 from mini_agent.config import Config
+from mini_agent.domain.models import LLMResponse
+from tests.fakes.scripted_llm import ScriptedLLM
 
 
 def test_cli_creates_lists_and_switches_sessions(tmp_path):
     application = build_application(
-        Config(api_key="cli-test", db_path=str(tmp_path / "agent.db"))
+        Config(api_key="cli-test", db_path=str(tmp_path / "agent.db")),
+        llm_client=ScriptedLLM(
+            [
+                LLMResponse(content="window one reply"),
+                LLMResponse(content="window two reply"),
+            ]
+        ),
     )
     commands = iter(
         [
@@ -39,4 +47,3 @@ def test_cli_creates_lists_and_switches_sessions(tmp_path):
     assert application.message_repo.list_messages("user_a", "window_2")[0].content == (
         "hello window two"
     )
-

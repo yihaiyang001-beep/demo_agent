@@ -104,15 +104,21 @@ def run_cli(
                 output_fn(f"未知命令：{command}。使用 /help 查看帮助。")
                 continue
 
-            application.message_repo.add_user_message(owner, current.id, text)
-            application.session_service.touch_and_set_title_if_empty(
+            def show_tool_event(event: str, name: str, details: dict) -> None:
+                if event == "call":
+                    output_fn(f"> tool_call {name} {details}")
+                else:
+                    status = "success" if details.get("success") else "failed"
+                    output_fn(f"< tool_result {name} {status}")
+
+            result = application.runtime.run(
                 owner,
                 current.id,
                 text,
+                on_tool_event=show_tool_event,
             )
-            reply = f"echo: {text}"
-            application.message_repo.add_assistant_message(owner, current.id, reply)
-            output_fn(f"assistant> {reply}")
+            output_fn(f"assistant> {result.answer}")
+            output_fn(f"Trace ID: {result.trace_id}")
         except AgentError as exc:
             output_fn(exc.user_message)
 
@@ -136,4 +142,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

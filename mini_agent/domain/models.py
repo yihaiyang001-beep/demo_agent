@@ -156,3 +156,10 @@ class TraceStepRecord:
     error_code: str | None
     error_message: str | None
     created_at: str
+
+
+@dataclass(frozen=True)
+class ContextResult:
+    messages: list[dict[str, Any]]
+    estimated_tokens: int
+    compressed: bool = False
