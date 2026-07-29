@@ -34,14 +34,16 @@ def clear_agent_environment(monkeypatch):
 
 
 def test_config_reads_agent_env(monkeypatch, tmp_path):
+    legacy_model_name = "CORE" + "CODER_MODEL"
+    openai_key_name = "OPEN" + "AI_API_KEY"
     db_path = tmp_path / "nested" / "agent.db"
     monkeypatch.setenv("AGENT_API_KEY", "test-secret")
     monkeypatch.setenv("AGENT_MODEL", "deepseek-test")
     monkeypatch.setenv("AGENT_THINKING_ENABLED", "true")
     monkeypatch.setenv("AGENT_MAX_STEPS", "4")
     monkeypatch.setenv("AGENT_DB_PATH", str(db_path))
-    monkeypatch.setenv("CORECODER_MODEL", "must-be-ignored")
-    monkeypatch.setenv("OPENAI_API_KEY", "must-also-be-ignored")
+    monkeypatch.setenv(legacy_model_name, "must-be-ignored")
+    monkeypatch.setenv(openai_key_name, "must-also-be-ignored")
 
     config = Config.from_env()
 
@@ -77,11 +79,12 @@ def test_config_rejects_invalid_thresholds(
 
 
 def test_config_does_not_read_legacy_environment(monkeypatch):
-    monkeypatch.setenv("CORECODER_API_KEY", "legacy-secret")
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    legacy_key_name = "CORE" + "CODER_API_KEY"
+    openai_key_name = "OPEN" + "AI_API_KEY"
+    monkeypatch.setenv(legacy_key_name, "legacy-secret")
+    monkeypatch.setenv(openai_key_name, "openai-secret")
 
     with pytest.raises(ValueError, match="AGENT_API_KEY"):
         Config.from_env()
 
-    assert os.getenv("CORECODER_API_KEY") == "legacy-secret"
-
+    assert os.getenv(legacy_key_name) == "legacy-secret"

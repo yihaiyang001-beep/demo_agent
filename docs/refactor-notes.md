@@ -38,3 +38,9 @@
 - 旧 `corecoder/` 仅在迁移期间作为参考和基线保留。
 - 只有新系统完成全量非 live 测试与最终检查后，才清理旧 Runtime 和旧测试。
 
+## 完成状态
+
+- 阶段 0–10 已按顺序通过专项测试并分别提交。
+- 新 Runtime 默认测试、静态检查、ResourceWarning 检查和覆盖率均已通过。
+- 旧 Runtime 已在最终阶段清理；原始快照仍可从
+  `corecoder-before-runtime-refactor` 标签恢复。
