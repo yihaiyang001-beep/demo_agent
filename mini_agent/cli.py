@@ -180,6 +180,8 @@ def run_cli(
             )
             output_fn(f"assistant> {result.answer}")
             output_fn(f"Trace ID: {result.trace_id}")
+        except KeyboardInterrupt:
+            output_fn("本轮执行已中断，未完成的工具调用已修复。")
         except AgentError as exc:
             output_fn(exc.user_message)
 

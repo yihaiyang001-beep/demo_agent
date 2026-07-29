@@ -132,3 +132,10 @@ class SessionService:
         else:
             self.session_repo.touch(user_id, session_id)
 
+    def set_status(self, user_id: str, session_id: str, status: str) -> None:
+        owner = self.normalize_user_id(user_id)
+        normalized_id = self.normalize_session_id(session_id)
+        self.session_repo.set_status(owner, normalized_id, status)
+
+    def recover_stale_busy(self) -> list[SessionRecord]:
+        return self.session_repo.reset_status("busy", "idle")

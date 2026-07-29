@@ -183,7 +183,99 @@ class MessageRepository:
             ).fetchone()
         return int(row["count"])
 
+    def find_pending_tool_calls(
+        self,
+        user_id: str,
+        session_id: str,
+    ) -> list[ToolCall]:
+        records = self.list_messages(user_id, session_id)
+        answered_ids = {
+            record.tool_call_id
+            for record in records
+            if record.role == "tool" and record.tool_call_id
+        }
+        pending: list[ToolCall] = []
+        for record in records:
+            if record.role != "assistant" or not record.tool_calls:
+                continue
+            for raw_call in record.tool_calls:
+                call_id = str(raw_call.get("id") or "")
+                if not call_id or call_id in answered_ids:
+                    continue
+                function = raw_call.get("function") or {}
+                raw_arguments = str(function.get("arguments") or "{}")
+                parse_error = None
+                try:
+                    arguments = json.loads(raw_arguments)
+                    if not isinstance(arguments, dict):
+                        arguments = None
+                        parse_error = "Tool arguments must be a JSON object"
+                except json.JSONDecodeError as exc:
+                    arguments = None
+                    parse_error = str(exc)
+                pending.append(
+                    ToolCall(
+                        id=call_id,
+                        name=str(function.get("name") or ""),
+                        arguments=arguments,
+                        raw_arguments=raw_arguments,
+                        parse_error=parse_error,
+                    )
+                )
+        return pending
+
+    def repair_pending_tool_calls(
+        self,
+        user_id: str,
+        session_id: str,
+    ) -> list[str]:
+        pending = self.find_pending_tool_calls(user_id, session_id)
+        if not pending:
+            return []
+        interrupted_content = json.dumps(
+            {
+                "success": False,
+                "data": None,
+                "error_code": "INTERRUPTED",
+                "message": "上一次工具执行被中断",
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        repaired_ids: list[str] = []
+        with self.database.connect() as conn:
+            existing_rows = conn.execute(
+                """
+                SELECT tool_call_id FROM messages
+                WHERE user_id = ? AND session_id = ?
+                    AND role = 'tool' AND tool_call_id IS NOT NULL
+                """,
+                (user_id, session_id),
+            ).fetchall()
+            existing = {row["tool_call_id"] for row in existing_rows}
+            for call in pending:
+                if call.id in existing:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO messages(
+                        user_id, session_id, role, content,
+                        tool_call_id, created_at
+                    )
+                    VALUES (?, ?, 'tool', ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        session_id,
+                        interrupted_content,
+                        call.id,
+                        utc_now(),
+                    ),
+                )
+                existing.add(call.id)
+                repaired_ids.append(call.id)
+        return repaired_ids
+
     @staticmethod
     def to_api_messages(records: list[MessageRecord]) -> list[dict[str, Any]]:
         return [record.to_api_message() for record in records]
-

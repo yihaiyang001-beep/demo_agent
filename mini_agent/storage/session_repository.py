@@ -110,3 +110,29 @@ class SessionRepository:
                 (status, utc_now(), user_id, session_id),
             )
 
+    def list_by_status(self, status: str) -> list[SessionRecord]:
+        with self.database.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM sessions
+                WHERE status = ?
+                ORDER BY updated_at, user_id, id
+                """,
+                (status,),
+            ).fetchall()
+        return [_from_row(row) for row in rows if row is not None]
+
+    def reset_status(self, from_status: str, to_status: str) -> list[SessionRecord]:
+        records = self.list_by_status(from_status)
+        if not records:
+            return []
+        with self.database.connect() as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET status = ?, updated_at = ?
+                WHERE status = ?
+                """,
+                (to_status, utc_now(), from_status),
+            )
+        return records

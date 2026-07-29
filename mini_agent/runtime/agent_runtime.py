@@ -69,6 +69,20 @@ class AgentRuntime:
         completed_steps = 0
 
         try:
+            self.session_service.set_status(owner, current_session_id, "busy")
+            repaired_ids = self.message_repo.repair_pending_tool_calls(
+                owner,
+                current_session_id,
+            )
+            if repaired_ids:
+                self.trace_recorder.record_event(
+                    trace_id,
+                    step_number=0,
+                    event_index=0,
+                    event_type="tool_calls_repaired",
+                    status="success",
+                    output_data={"tool_call_ids": repaired_ids},
+                )
             self.message_repo.add_user_message(owner, current_session_id, content)
             self.session_service.touch_and_set_title_if_empty(
                 owner,
@@ -217,6 +231,20 @@ class AgentRuntime:
                 completion_tokens=total_completion_tokens,
             )
         except KeyboardInterrupt:
+            repaired_ids = self.message_repo.repair_pending_tool_calls(
+                owner,
+                current_session_id,
+            )
+            self.trace_recorder.record_event(
+                trace_id,
+                step_number=completed_steps,
+                event_index=999,
+                event_type="interrupted",
+                status="failed",
+                output_data={"repaired_tool_call_ids": repaired_ids},
+                error_code="INTERRUPTED",
+                error_message="Agent execution interrupted",
+            )
             self.trace_recorder.fail(
                 trace_id,
                 status="interrupted",
@@ -276,6 +304,9 @@ class AgentRuntime:
                 prompt_tokens=total_prompt_tokens,
                 completion_tokens=total_completion_tokens,
             )
+        finally:
+            with suppress(Exception):
+                self.session_service.set_status(owner, current_session_id, "idle")
 
     def _record_failure_event(
         self,

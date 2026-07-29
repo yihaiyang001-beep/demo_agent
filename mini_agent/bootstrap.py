@@ -70,6 +70,26 @@ def build_application(
         registry.register(TodoTool(todo_repo))
         registry.register(MockSearchTool())
     trace_recorder = TraceRecorder(trace_repo, sensitive_values=[config.api_key])
+    for stale_session in session_service.recover_stale_busy():
+        recovery_trace_id = trace_recorder.start(
+            user_id=stale_session.user_id,
+            session_id=stale_session.id,
+            user_input="[startup recovery]",
+        )
+        trace_recorder.record_event(
+            recovery_trace_id,
+            step_number=0,
+            event_index=0,
+            event_type="stale_busy_recovered",
+            status="success",
+            output_data={"previous_status": "busy", "new_status": "idle"},
+        )
+        trace_recorder.complete(
+            recovery_trace_id,
+            steps=0,
+            prompt_tokens=0,
+            completion_tokens=0,
+        )
     active_llm_client = llm_client or DeepSeekClient(
         config,
         on_retry=trace_recorder.record_retry,
