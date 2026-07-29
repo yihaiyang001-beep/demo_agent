@@ -6,6 +6,16 @@ import sqlite3
 from pathlib import Path
 
 
+class ManagedConnection(sqlite3.Connection):
+    """Commit/rollback like sqlite3, then also release the file handle."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 class Database:
     def __init__(self, db_path: str):
         if not db_path:
@@ -19,7 +29,11 @@ class Database:
 
     def connect(self) -> sqlite3.Connection:
         self._ensure_parent()
-        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        conn = sqlite3.connect(
+            self.db_path,
+            timeout=5.0,
+            factory=ManagedConnection,
+        )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
@@ -46,4 +60,3 @@ class Database:
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             ).fetchall()
         return required.issubset({row["name"] for row in rows})
-

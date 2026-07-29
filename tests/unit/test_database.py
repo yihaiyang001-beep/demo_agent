@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
+
+import pytest
+
 from mini_agent.storage.database import Database
 
 EXPECTED_TABLES = {
@@ -52,3 +56,13 @@ def test_database_initialize_is_idempotent(tmp_path):
 
     assert database.is_initialized()
 
+
+def test_database_context_manager_closes_connection(tmp_path):
+    database = Database(str(tmp_path / "agent.db"))
+    database.initialize()
+
+    with database.connect() as connection:
+        connection.execute("SELECT 1").fetchone()
+
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connection.execute("SELECT 1")

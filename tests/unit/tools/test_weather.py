@@ -113,6 +113,18 @@ def test_weather_timeout(runtime_context):
     assert exc_info.value.code == "WEATHER_TIMEOUT"
 
 
+def test_weather_network_error(runtime_context):
+    def handler(request):
+        raise httpx.ConnectError("connection failed", request=request)
+
+    tool = make_tool(handler)
+
+    with pytest.raises(ToolExecutionError) as exc_info:
+        tool.execute(WeatherArgs(city="北京"), runtime_context)
+
+    assert exc_info.value.code == "WEATHER_NETWORK_ERROR"
+
+
 @pytest.mark.parametrize("raw_date", ["next week", "2026-07-28", "2026-08-20"])
 def test_weather_invalid_date(runtime_context, raw_date):
     def handler(request):
@@ -143,4 +155,3 @@ def test_weather_response_invalid(runtime_context):
         )
 
     assert exc_info.value.code == "WEATHER_RESPONSE_INVALID"
-
