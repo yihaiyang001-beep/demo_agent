@@ -15,6 +15,7 @@ venv/
 .corecoder_history
 .DS_Store
 .pytest_cache/
+.pytest_tmp/
 .tmp/
 data/*.db
 data/*.db-*
