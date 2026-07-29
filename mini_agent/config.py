@@ -9,13 +9,15 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from mini_agent.domain.errors import ConfigurationError
+
 
 def _read_int(name: str, default: int) -> int:
     raw = os.getenv(name, str(default))
     try:
         return int(raw)
     except ValueError as exc:
-        raise ValueError(f"{name} must be an integer") from exc
+        raise ConfigurationError(f"{name} must be an integer") from exc
 
 
 def _read_float(name: str, default: float) -> float:
@@ -23,7 +25,7 @@ def _read_float(name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError as exc:
-        raise ValueError(f"{name} must be a number") from exc
+        raise ConfigurationError(f"{name} must be a number") from exc
 
 
 def _read_bool(name: str, default: bool) -> bool:
@@ -35,7 +37,7 @@ def _read_bool(name: str, default: bool) -> bool:
         return True
     if normalized in {"0", "false", "no", "off"}:
         return False
-    raise ValueError(f"{name} must be true or false")
+    raise ConfigurationError(f"{name} must be true or false")
 
 
 @dataclass(frozen=True)
@@ -87,41 +89,41 @@ class Config:
 
     def validate(self) -> None:
         if not self.api_key:
-            raise ValueError("AGENT_API_KEY must not be empty")
+            raise ConfigurationError("AGENT_API_KEY must not be empty")
         if not self.base_url:
-            raise ValueError("AGENT_BASE_URL must not be empty")
+            raise ConfigurationError("AGENT_BASE_URL must not be empty")
         if not self.model:
-            raise ValueError("AGENT_MODEL must not be empty")
+            raise ConfigurationError("AGENT_MODEL must not be empty")
         if self.max_output_tokens < 1:
-            raise ValueError("AGENT_MAX_OUTPUT_TOKENS must be at least 1")
+            raise ConfigurationError("AGENT_MAX_OUTPUT_TOKENS must be at least 1")
         if self.llm_timeout_seconds < 1:
-            raise ValueError("AGENT_LLM_TIMEOUT_SECONDS must be at least 1")
+            raise ConfigurationError("AGENT_LLM_TIMEOUT_SECONDS must be at least 1")
         if self.llm_max_retries < 1:
-            raise ValueError("AGENT_LLM_MAX_RETRIES must be at least 1")
+            raise ConfigurationError("AGENT_LLM_MAX_RETRIES must be at least 1")
         if self.max_steps < 1:
-            raise ValueError("AGENT_MAX_STEPS must be at least 1")
+            raise ConfigurationError("AGENT_MAX_STEPS must be at least 1")
         if self.repeat_limit < 1:
-            raise ValueError("AGENT_REPEAT_LIMIT must be at least 1")
+            raise ConfigurationError("AGENT_REPEAT_LIMIT must be at least 1")
         if self.max_context_tokens < 1:
-            raise ValueError("AGENT_MAX_CONTEXT_TOKENS must be at least 1")
+            raise ConfigurationError("AGENT_MAX_CONTEXT_TOKENS must be at least 1")
         if not (
             0 < self.summary_threshold_ratio < self.collapse_threshold_ratio < 1
         ):
-            raise ValueError(
+            raise ConfigurationError(
                 "context ratios must satisfy "
                 "0 < AGENT_SUMMARY_THRESHOLD_RATIO < "
                 "AGENT_COLLAPSE_THRESHOLD_RATIO < 1"
             )
         if self.recent_messages < 1 or self.collapse_recent_messages < 1:
-            raise ValueError("recent message windows must be at least 1")
+            raise ConfigurationError("recent message windows must be at least 1")
         if self.collapse_recent_messages > self.recent_messages:
-            raise ValueError(
+            raise ConfigurationError(
                 "AGENT_COLLAPSE_RECENT_MESSAGES must not exceed AGENT_RECENT_MESSAGES"
             )
         if not self.db_path:
-            raise ValueError("AGENT_DB_PATH must not be empty")
+            raise ConfigurationError("AGENT_DB_PATH must not be empty")
         if self.weather_timeout_seconds < 1:
-            raise ValueError("AGENT_WEATHER_TIMEOUT_SECONDS must be at least 1")
+            raise ConfigurationError("AGENT_WEATHER_TIMEOUT_SECONDS must be at least 1")
 
     def ensure_storage_directory(self) -> None:
         if self.db_path == ":memory:":
@@ -134,4 +136,3 @@ class Config:
         values.pop("api_key", None)
         values["api_key_configured"] = bool(self.api_key)
         return values
-
