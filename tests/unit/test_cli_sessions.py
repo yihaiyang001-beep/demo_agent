@@ -97,3 +97,37 @@ def test_cli_manual_compact_command(tmp_path):
     assert application.summary_repo.get("user_a", "window_1").summary == (
         "manual summary"
     )
+
+
+def test_cli_todos_tokens_and_current_commands(tmp_path):
+    application = build_application(
+        Config(api_key="cli-test", db_path=str(tmp_path / "agent.db")),
+        llm_client=ScriptedLLM(
+            [
+                LLMResponse(
+                    content="done",
+                    prompt_tokens=12,
+                    completion_tokens=4,
+                )
+            ]
+        ),
+    )
+    application.session_service.create("user_a", "window_1")
+    application.todo_repo.add("user_a", "window_1", "CLI todo")
+    commands = iter(["hello", "/todos", "/tokens", "/current", "/exit"])
+    output = []
+
+    run_cli(
+        application,
+        user_id="user_a",
+        session_id="window_1",
+        input_fn=lambda _prompt: next(commands),
+        output_fn=output.append,
+    )
+
+    joined = "\n".join(output)
+    assert "CLI todo" in joined
+    assert "Prompt: 12" in joined
+    assert "Completion: 4" in joined
+    assert "Current user: user_a" in joined
+    assert "Model: deepseek-v4-pro" in joined

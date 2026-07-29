@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Callable, Sequence
 
 from mini_agent.bootstrap import Application, build_application
@@ -26,9 +27,11 @@ def _help_text() -> str:
             "/sessions                   列出当前用户所有 Session",
             "/switch <session_id>        切换到已有 Session",
             "/current                    查看当前 Session",
+            "/todos                      查看当前 Session Todo",
             "/trace                      查看当前 Session 最近一条 Trace",
             "/trace <trace_id>           查看指定 Trace",
             "/compact                    手动压缩当前 Session",
+            "/tokens                     查看当前 Session 最近用量",
             "/exit                       退出",
         ]
     )
@@ -101,7 +104,23 @@ def run_cli(
                 output_fn(f"已切换到 {current.id}")
                 continue
             if command == "/current":
-                output_fn(f"Current session: {current.id}")
+                output_fn(
+                    f"Current user: {owner}\n"
+                    f"Current session: {current.id}\n"
+                    f"Model: {application.config.model}"
+                )
+                continue
+            if command == "/todos":
+                todos = application.todo_repo.list(owner, current.id)
+                if not todos:
+                    output_fn("当前 Session 没有 Todo。")
+                    continue
+                for todo in todos:
+                    marker = "✓" if todo["status"] == "completed" else " "
+                    output_fn(
+                        f"[{marker}] #{todo['id']} {todo['content']} "
+                        f"({todo['status']})"
+                    )
                 continue
             if command == "/trace":
                 trace = (
@@ -161,13 +180,28 @@ def run_cli(
                 )
                 output_fn(f"Trace ID: {compact_trace_id}")
                 continue
+            if command == "/tokens":
+                latest = application.trace_repo.get_latest(owner, current.id)
+                if latest is None:
+                    output_fn("当前 Session 还没有 Token 用量记录。")
+                    continue
+                total = (
+                    latest.total_prompt_tokens + latest.total_completion_tokens
+                )
+                output_fn(
+                    f"Latest trace: {latest.id}\n"
+                    f"Prompt: {latest.total_prompt_tokens}\n"
+                    f"Completion: {latest.total_completion_tokens}\n"
+                    f"Total: {total}"
+                )
+                continue
             if command.startswith("/"):
                 output_fn(f"未知命令：{command}。使用 /help 查看帮助。")
                 continue
 
             def show_tool_event(event: str, name: str, details: dict) -> None:
                 if event == "call":
-                    output_fn(f"> tool_call {name} {details}")
+                    output_fn(f"> tool_call {name} {_brief(details)}")
                 else:
                     status = "success" if details.get("success") else "failed"
                     output_fn(f"< tool_result {name} {status}")
@@ -201,6 +235,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"启动失败：{message}")
         return 2
     return 0
+
+
+def _brief(value: dict, max_length: int = 120) -> str:
+    serialized = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if len(serialized) <= max_length:
+        return serialized
+    return serialized[: max_length - 3] + "..."
 
 
 if __name__ == "__main__":
