@@ -9,9 +9,16 @@ build/
 .env
 .venv/
 venv/
+.idea/
 .mypy_cache/
 .ruff_cache/
 .corecoder_history
 .DS_Store
 .pytest_cache/
 .tmp/
+data/*.db
+data/*.db-*
+*.sqlite
+*.sqlite3
+.coverage
+htmlcov/
