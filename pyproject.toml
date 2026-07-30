@@ -13,6 +13,7 @@ dependencies = [
     "rich>=13.0",
     "prompt_toolkit>=3.0",
     "python-dotenv>=1.0",
+    "pypinyin>=0.53,<1.0",
     "pydantic>=2.0,<3.0",
     "httpx>=0.27,<1.0",
 ]
@@ -27,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-mini-agent = "mini_agent.cli:main"
+mini-agent = "mini_agent.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["mini_agent*"]

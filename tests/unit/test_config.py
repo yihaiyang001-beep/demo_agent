@@ -29,6 +29,10 @@ AGENT_ENV_NAMES = [
 
 @pytest.fixture(autouse=True)
 def clear_agent_environment(monkeypatch):
+    monkeypatch.setattr(
+        "mini_agent.config.load_dotenv",
+        lambda **_kwargs: False,
+    )
     for name in AGENT_ENV_NAMES:
         monkeypatch.delenv(name, raising=False)
 

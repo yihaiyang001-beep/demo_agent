@@ -40,14 +40,14 @@ AGENT_MODEL=deepseek-v4-pro
 检查配置和数据库初始化（不会打印 API Key）：
 
 ```bash
-python -m mini_agent --check
+python -m mini-agent --check
 ```
 
 启动：
 
 ```bash
-mini-agent --user-id user_a
-mini-agent --user-id user_a --session-id window_1
+python -m mini-agent --user-id user_a
+python -m mini-agent --user-id user_a --session-id window_1
 ```
 
 ## 环境变量
@@ -78,7 +78,7 @@ Coding Agent 或通用 OpenAI 环境变量。
 /todos                      查看当前 Session Todo
 /trace [trace_id]           查看 Trace
 /compact                    手动压缩当前 Session
-/tokens                     查看最近一条 Trace 用量
+/context                    查看当前 Session Context 估算
 /exit                       退出
 ```
 
@@ -127,7 +127,8 @@ LLM/Weather 请求期间不持有 SQLite 事务。全部对象在 `bootstrap.py`
 ## 工具
 
 - `calculator`：AST 白名单，只允许数字、括号、基本二元/一元运算；限制 AST、指数和结果。
-- `weather`：Open-Meteo 地理编码和日预报，返回精简 JSON，含 timeout 和结构化错误。
+- `weather`：Open-Meteo 地理编码和日预报；中文名称无结果时自动提取城市名并转拼音重试，
+  结合省份、城市层级和人口信息消歧。每日天气表示全天最严重的模型预报，不是现场实况。
 - `todo`：模型参数不暴露用户或 Session ID，所有者信息只来自 `ToolRuntimeContext`。
 - `search`：确定性本地数据，结果固定包含 `"mock": true`。
 
@@ -199,12 +200,4 @@ pytest tests/live -m live -s
 开发问题、Prompt、建议和最终判断记录在
 [AI Development Log](docs/ai-development-log.md)。
 
-## 来源与许可证说明
-
-本项目在 CoreCoder 仓库快照基础上进行重构式开发，参考其最小 Agent Loop、
-OpenAI-compatible 消息格式和 Tool Call 中断修复思路。核心 Runtime、
-Session/SQLite、Context 压缩、Trace 和新工具系统为独立重写实现。
-
-提供的仓库快照中没有许可证文件。公开分发或商业使用前，应确认并补充原始 CoreCoder
-来源对应的许可证和归属声明；本仓库不会自行推定或伪造许可证。
 

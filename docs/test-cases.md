@@ -22,7 +22,7 @@ pytest tests/live -m live -s
 |---|---|---|
 | T01 | 普通问候直接回答 | `tests/integration/test_agent_loop.py::test_direct_answer` |
 | T02 | Calculator 自主调用 | `tests/integration/test_agent_loop.py::test_single_tool_call` |
-| T03 | 北京真实天气 | `tests/live/test_end_to_end.py::test_live_weather_tool` |
+| T03 | 中文城市自动拼音回退并查询真实天气 | `tests/live/test_end_to_end.py::test_live_open_meteo_weather` |
 | T04 | Mock Search 标识 | `tests/unit/tools/test_search.py` |
 | T05 | 添加 Todo | `tests/unit/tools/test_todo.py::test_todo_add_and_list` |
 | T06 | 查看 Todo | `tests/unit/tools/test_todo.py::test_todo_add_and_list` |
@@ -49,4 +49,3 @@ pytest tests/live -m live -s
 - Tool Call 参数解析失败必须保留原始字符串和错误，不允许静默转换为 `{}`。
 - 压缩测试必须断言原始消息数量和内容保持不变。
 - Todo、消息、摘要和 Trace 的所有访问都包含 `user_id + session_id` 所有者边界。
-

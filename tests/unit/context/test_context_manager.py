@@ -72,6 +72,32 @@ def test_no_compression_below_threshold(tmp_path):
     assert llm.requests == []
 
 
+def test_estimate_tokens_is_read_only_and_does_not_compress(tmp_path):
+    manager, messages, summaries, llm = build_context(
+        tmp_path,
+        [LLMResponse(content="summary")],
+    )
+    for index in range(4):
+        add_turn(messages, f"user-{index}-" + "x" * 80, f"assistant-{index}")
+    before = messages.list_messages("user_a", "window_1")
+
+    estimated = manager.estimate_tokens("user_a", "window_1")
+
+    expected_messages = [
+        {"role": "system", "content": "sys"},
+        *messages.to_api_messages(before),
+    ]
+    expected = SimpleTokenEstimator().estimate_messages(expected_messages, [])
+    assert estimated == expected
+    assert estimated >= round(
+        manager.config.max_context_tokens
+        * manager.config.summary_threshold_ratio
+    )
+    assert summaries.get("user_a", "window_1") is None
+    assert messages.list_messages("user_a", "window_1") == before
+    assert llm.requests == []
+
+
 def test_compression_triggered_at_70_percent(tmp_path):
     manager, messages, summaries, llm = build_context(
         tmp_path,

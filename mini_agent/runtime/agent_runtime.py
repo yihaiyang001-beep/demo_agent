@@ -53,23 +53,36 @@ class AgentRuntime:
         *,
         on_tool_event: ToolEventCallback | None = None,
     ) -> AgentResult:
+        # 阶段一、 初始化与状态修复（进入循环前）
+        # 校验与取数：验证 user_id 等输入，获取或创建会话（Session）。
+        #
+        # 状态锁定：将当前会话状态设为 "busy"（防止并发冲突）。
+        #
+        # 关键修复：调用 repair_pending_tool_calls。这是为了处理上一次运行中途崩溃导致的“悬空”工具调用（AI 要求调用工具，但结果未返回），确保消息历史的一致性。
+        #
+        # 记录用户输入：将用户问题存入消息库，并根据内容自动生成会话标题。
         self._validate_input(user_id, session_id, user_input)
+        # 加载或者创建session
         session = self.session_service.get_or_create(user_id, session_id)
         owner = session.user_id
         current_session_id = session.id
         content = user_input.strip()
+        # 为本次对话开启一个trace
         trace_id = self.trace_recorder.start(
             user_id=owner,
             session_id=current_session_id,
             user_input=content,
         )
+        # 创建重复调用保护器
         repeat_guard = RepetitionGuard(self.config.repeat_limit)
         total_prompt_tokens = 0
         total_completion_tokens = 0
         completed_steps = 0
 
         try:
+            # 设置session状态
             self.session_service.set_status(owner, current_session_id, "busy")
+            # 补全上次调用失败的tool
             repaired_ids = self.message_repo.repair_pending_tool_calls(
                 owner,
                 current_session_id,
@@ -83,27 +96,33 @@ class AgentRuntime:
                     status="success",
                     output_data={"tool_call_ids": repaired_ids},
                 )
+            # 加入信息，设置session标题（若是第一条信息就截取提问的前四十个字符为title）
             self.message_repo.add_user_message(owner, current_session_id, content)
             self.session_service.touch_and_set_title_if_empty(
                 owner,
                 current_session_id,
                 content,
             )
+            # 阶段二：核心迭代循环（Step 1 → Max_Steps）
             for step_number in range(1, self.config.max_steps + 1):
                 completed_steps = step_number
+                # 获取上下文，这一步就可能涉及到压缩上下文
                 context = self.context_manager.prepare(
                     owner,
                     current_session_id,
                     trace_id=trace_id,
                     step_number=step_number,
                 )
+                # 记录事件
                 self.trace_recorder.record_context(
                     trace_id,
                     step_number,
                     context.estimated_tokens,
                 )
                 self.trace_recorder.begin_llm_step(trace_id, step_number)
+
                 try:
+                    # 调用llm，获取一个response，传入tool.schemas和消息
                     response = self.llm_client.chat(
                         messages=context.messages,
                         tools=self.tool_registry.schemas(),
@@ -118,6 +137,7 @@ class AgentRuntime:
                     response,
                 )
 
+                # 重要分支，若无tool调用就说明回答结束，直接返回给用户即可
                 if not response.tool_calls:
                     if not response.content.strip():
                         raise EmptyLLMResponseError("LLM returned no content or tool calls")
@@ -142,27 +162,34 @@ class AgentRuntime:
                         completion_tokens=total_completion_tokens,
                     )
 
+                # 反之就直接去调用tool，进入下一轮循环
+
+                # 保存message
                 self.message_repo.add_assistant_tool_calls(
                     owner,
                     current_session_id,
                     response.tool_calls,
                     response.content or None,
                 )
+
+                # 按顺序执行tool
                 for index, tool_call in enumerate(response.tool_calls):
                     call_event_index = 3 + index * 2
+                    # 记录工具调用trace
                     self.trace_recorder.record_tool_call(
                         trace_id,
                         step_number,
                         call_event_index,
                         tool_call,
                     )
+                    # 输出到终端
                     if on_tool_event:
                         on_tool_event(
                             "call",
                             tool_call.name,
                             tool_call.arguments or {"raw": tool_call.raw_arguments},
                         )
-
+                    # 重复调用检验，若重复调用达到阈值就不去执行而是返回一个错误给llm
                     if repeat_guard.should_block(tool_call):
                         result = ToolResult(
                             success=False,
@@ -171,8 +198,11 @@ class AgentRuntime:
                             error_message="相同工具和参数已连续调用过多次",
                         )
                     else:
+                        # 真正调用tool
                         result = self.tool_registry.execute(
                             tool_call,
+                            # 对于todo工具不信任模型传来的 Session ID，而是使用 Runtime 提供的context.session_id
+                            # 目的时防止模型无法跨 Session 操作todo
                             ToolRuntimeContext(
                                 user_id=owner,
                                 session_id=current_session_id,
@@ -180,6 +210,7 @@ class AgentRuntime:
                             ),
                         )
 
+                    # 保存信息，例如tool输出结果到message，trace内容
                     self.message_repo.add_tool_result(
                         owner,
                         current_session_id,
