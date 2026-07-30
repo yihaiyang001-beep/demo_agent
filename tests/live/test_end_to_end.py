@@ -37,7 +37,7 @@ def _trace_tool_names(application, trace_id):
 def test_live_open_meteo_weather():
     config = Config(api_key="weather-live-only", db_path=":memory:")
     result = WeatherTool(config).execute(
-        WeatherArgs(city="北京", date="today"),
+        WeatherArgs(city="江西省宜春市", date="today"),
         ToolRuntimeContext(
             user_id="live_user",
             session_id="weather",
@@ -46,7 +46,9 @@ def test_live_open_meteo_weather():
     )
 
     assert result["source"] == "Open-Meteo"
-    assert result["city"]
+    assert result["city"] == "宜春市"
+    assert result["region"] == "江西"
+    assert result["weather_scope"] == "daily_most_severe_forecast"
     assert result["date"]
 
 
@@ -130,4 +132,3 @@ def test_live_multi_tool_and_follow_up(tmp_path):
         set(_trace_tool_names(application, first.trace_id))
     )
     assert "weather" in _trace_tool_names(application, follow_up.trace_id)
-

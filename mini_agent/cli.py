@@ -31,7 +31,7 @@ def _help_text() -> str:
             "/trace                      查看当前 Session 最近一条 Trace",
             "/trace <trace_id>           查看指定 Trace",
             "/compact                    手动压缩当前 Session",
-            "/tokens                     查看当前 Session 最近用量",
+            "/context                    查看当前 Session Context 估算",
             "/exit                       退出",
         ]
     )
@@ -180,19 +180,17 @@ def run_cli(
                 )
                 output_fn(f"Trace ID: {compact_trace_id}")
                 continue
-            if command == "/tokens":
-                latest = application.trace_repo.get_latest(owner, current.id)
-                if latest is None:
-                    output_fn("当前 Session 还没有 Token 用量记录。")
-                    continue
-                total = (
-                    latest.total_prompt_tokens + latest.total_completion_tokens
+            if command == "/context":
+                estimated = application.context_manager.estimate_tokens(
+                    owner,
+                    current.id,
                 )
+                limit = application.config.max_context_tokens
+                usage = estimated / limit * 100
                 output_fn(
-                    f"Latest trace: {latest.id}\n"
-                    f"Prompt: {latest.total_prompt_tokens}\n"
-                    f"Completion: {latest.total_completion_tokens}\n"
-                    f"Total: {total}"
+                    f"Current context estimate: {estimated} tokens\n"
+                    f"Context limit: {limit} tokens\n"
+                    f"Usage: {usage:.1f}%"
                 )
                 continue
             if command.startswith("/"):

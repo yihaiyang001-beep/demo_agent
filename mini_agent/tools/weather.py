@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -9,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from pydantic import Field
+from pypinyin import Style, lazy_pinyin
 
 from mini_agent.config import Config
 from mini_agent.domain.errors import ToolExecutionError
@@ -18,6 +20,12 @@ from .base import BaseTool, ToolArgs
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+
+HAN_CHARACTER_RE = re.compile(r"[\u3400-\u9fff]")
+ADMINISTRATIVE_DIVIDER_RE = re.compile(
+    r"(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|"
+    r"省|市|地区|盟|县|区)"
+)
 
 WEATHER_CODES = {
     0: "晴",
@@ -58,7 +66,10 @@ class WeatherArgs(ToolArgs):
 
 class WeatherTool(BaseTool):
     name = "weather"
-    description = "Get a compact daily weather forecast from Open-Meteo."
+    description = (
+        "Get a compact daily Open-Meteo forecast. The weather field is the most "
+        "severe condition forecast for the whole day, not an observed current condition."
+    )
     args_model = WeatherArgs
 
     def __init__(
@@ -77,32 +88,11 @@ class WeatherTool(BaseTool):
 
     def execute(self, args: ToolArgs, context: ToolRuntimeContext) -> dict[str, Any]:
         assert isinstance(args, WeatherArgs)
-        geocoding = self._request_json(
-            GEOCODING_URL,
-            params={
-                "name": args.city,
-                "count": 1,
-                "language": "zh",
-                "format": "json",
-            },
-        )
-        results = geocoding.get("results")
-        if not isinstance(results, list):
-            raise ToolExecutionError(
-                "WEATHER_RESPONSE_INVALID",
-                "天气地理编码响应格式无效",
-            )
-        if not results:
-            raise ToolExecutionError(
-                "CITY_NOT_FOUND",
-                f"未找到城市：{args.city}",
-            )
-
-        place = results[0]
+        place = self._geocode_city(args.city)
         try:
             latitude = float(place["latitude"])
             longitude = float(place["longitude"])
-            city = str(place["name"])
+            city = self._display_city_name(place, args.city)
         except (KeyError, TypeError, ValueError) as exc:
             raise ToolExecutionError(
                 "WEATHER_RESPONSE_INVALID",
@@ -154,15 +144,164 @@ class WeatherTool(BaseTool):
 
         return {
             "city": city,
+            "region": str(place.get("admin1") or ""),
             "country": str(place.get("country") or ""),
+            "latitude": latitude,
+            "longitude": longitude,
             "date": target_date.isoformat(),
             "weather": WEATHER_CODES.get(weather_code, "未知天气"),
             "weather_code": weather_code,
+            "weather_scope": "daily_most_severe_forecast",
+            "weather_note": "全天最严重天气预报，不代表全天持续或现场实况",
             "temperature_min_c": temperature_min,
             "temperature_max_c": temperature_max,
             "precipitation_probability_max": precipitation,
+            "data_type": "numerical_weather_prediction",
             "source": "Open-Meteo",
         }
+
+    def _geocode_city(self, requested_city: str) -> dict[str, Any]:
+        for query in self._geocoding_queries(requested_city):
+            geocoding = self._request_json(
+                GEOCODING_URL,
+                params={
+                    "name": query,
+                    "count": 10,
+                    "language": "zh",
+                    "format": "json",
+                },
+            )
+            if "results" not in geocoding:
+                # Open-Meteo returns HTTP 200 without a results field for some
+                # valid searches that have no match, including some Chinese names.
+                continue
+
+            results = geocoding["results"]
+            if not isinstance(results, list):
+                raise ToolExecutionError(
+                    "WEATHER_RESPONSE_INVALID",
+                    "天气地理编码响应格式无效",
+                )
+            if not results:
+                continue
+
+            places = [item for item in results if isinstance(item, dict)]
+            if not places:
+                raise ToolExecutionError(
+                    "WEATHER_RESPONSE_INVALID",
+                    "天气地理编码响应缺少有效地点",
+                )
+            return self._select_place(places, requested_city)
+
+        raise ToolExecutionError(
+            "CITY_NOT_FOUND",
+            f"未找到城市：{requested_city}",
+        )
+
+    @classmethod
+    def _geocoding_queries(cls, requested_city: str) -> list[str]:
+        original = requested_city.strip()
+        locality = cls._locality_component(original)
+        candidates = [original]
+        if locality and locality != original:
+            candidates.append(locality)
+        if HAN_CHARACTER_RE.search(locality):
+            pinyin = "".join(
+                lazy_pinyin(locality, style=Style.NORMAL, errors="ignore")
+            )
+            if pinyin:
+                candidates.append(pinyin)
+
+        queries: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            key = candidate.casefold()
+            if candidate and key not in seen:
+                seen.add(key)
+                queries.append(candidate)
+        return queries
+
+    @staticmethod
+    def _locality_component(requested_city: str) -> str:
+        parts = [
+            part.strip()
+            for part in ADMINISTRATIVE_DIVIDER_RE.split(requested_city)
+            if part.strip()
+        ]
+        return parts[-1] if parts else requested_city.strip()
+
+    @classmethod
+    def _select_place(
+        cls,
+        places: list[dict[str, Any]],
+        requested_city: str,
+    ) -> dict[str, Any]:
+        requested = cls._normalize_location_text(requested_city)
+        tokens = {
+            cls._normalize_location_text(token)
+            for token in ADMINISTRATIVE_DIVIDER_RE.split(requested_city)
+            if cls._normalize_location_text(token)
+        }
+        locality = cls._normalize_location_text(
+            cls._locality_component(requested_city)
+        )
+        if locality:
+            tokens.add(locality)
+
+        def score(place: dict[str, Any]) -> tuple[int, int, int]:
+            value = 0
+            for field in ("name", "admin1", "admin2", "admin3", "admin4"):
+                raw_field = str(place.get(field) or "")
+                normalized_field = cls._normalize_location_text(raw_field)
+                normalized_base = cls._normalize_location_text(
+                    cls._locality_component(raw_field)
+                )
+                if requested and normalized_field == requested:
+                    value += 200
+                for token in tokens:
+                    if token == normalized_field:
+                        value += 100
+                    elif token == normalized_base:
+                        value += 90
+            feature_code = str(place.get("feature_code") or "")
+            feature_rank = {
+                "PPLC": 70,
+                "PPLA": 60,
+                "PPLA2": 50,
+                "PPLA3": 40,
+                "PPLA4": 30,
+                "PPL": 20,
+                "PPLX": 10,
+            }.get(feature_code, 0)
+            try:
+                population = int(place.get("population") or 0)
+            except (TypeError, ValueError):
+                population = 0
+            return value, feature_rank, population
+
+        return max(places, key=score)
+
+    @classmethod
+    def _display_city_name(
+        cls,
+        place: dict[str, Any],
+        requested_city: str,
+    ) -> str:
+        locality = cls._normalize_location_text(
+            cls._locality_component(requested_city)
+        )
+        for field in ("name", "admin2", "admin3", "admin1"):
+            value = str(place.get(field) or "")
+            normalized = cls._normalize_location_text(
+                cls._locality_component(value)
+            )
+            if locality and normalized == locality:
+                return value
+        return str(place["name"])
+
+    @staticmethod
+    def _normalize_location_text(value: str) -> str:
+        return "".join(character for character in value.casefold() if character.isalnum())
 
     @staticmethod
     def _resolve_date(raw: str, local_today: date) -> date:
@@ -221,4 +360,3 @@ class WeatherTool(BaseTool):
                 "天气服务响应必须是 JSON 对象",
             )
         return payload
-

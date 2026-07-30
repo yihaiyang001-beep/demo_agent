@@ -99,7 +99,7 @@ def test_cli_manual_compact_command(tmp_path):
     )
 
 
-def test_cli_todos_tokens_and_current_commands(tmp_path):
+def test_cli_todos_context_and_current_commands(tmp_path):
     application = build_application(
         Config(api_key="cli-test", db_path=str(tmp_path / "agent.db")),
         llm_client=ScriptedLLM(
@@ -114,7 +114,7 @@ def test_cli_todos_tokens_and_current_commands(tmp_path):
     )
     application.session_service.create("user_a", "window_1")
     application.todo_repo.add("user_a", "window_1", "CLI todo")
-    commands = iter(["hello", "/todos", "/tokens", "/current", "/exit"])
+    commands = iter(["hello", "/todos", "/context", "/current", "/exit"])
     output = []
 
     run_cli(
@@ -126,8 +126,16 @@ def test_cli_todos_tokens_and_current_commands(tmp_path):
     )
 
     joined = "\n".join(output)
+    estimated = application.context_manager.estimate_tokens(
+        "user_a",
+        "window_1",
+    )
+    usage = estimated / application.config.max_context_tokens * 100
     assert "CLI todo" in joined
-    assert "Prompt: 12" in joined
-    assert "Completion: 4" in joined
+    assert f"Current context estimate: {estimated} tokens" in joined
+    assert "Context limit: 32000 tokens" in joined
+    assert f"Usage: {usage:.1f}%" in joined
+    assert "Prompt: 12" not in joined
+    assert "Completion: 4" not in joined
     assert "Current user: user_a" in joined
     assert "Model: deepseek-v4-pro" in joined

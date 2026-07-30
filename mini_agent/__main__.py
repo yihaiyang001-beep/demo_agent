@@ -4,28 +4,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from collections.abc import Sequence
 
 from .bootstrap import initialize_foundation
 from .cli import main as cli_main
 from .config import Config
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="python -m mini_agent")
+def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="mini-agent")
     parser.add_argument(
         "--check",
         action="store_true",
         help="validate AGENT_* configuration and initialize the database",
     )
-    args, remaining = parser.parse_known_args()
-    args.remaining = remaining
-    return args
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = _parse_args()
-    if not args.check:
-        return cli_main(args.remaining)
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if "--check" not in arguments:
+        return cli_main(arguments)
+    _parse_args(arguments)
 
     try:
         config = Config.from_env()

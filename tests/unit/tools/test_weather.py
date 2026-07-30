@@ -20,6 +20,8 @@ def geocoding_payload():
             {
                 "name": "北京市",
                 "country": "中国",
+                "admin1": "北京市",
+                "admin2": "北京市",
                 "latitude": 39.9042,
                 "longitude": 116.4074,
                 "timezone": "Asia/Shanghai",
@@ -64,6 +66,7 @@ def test_weather_geocodes_city(runtime_context):
     )
 
     assert requests[0].url.params["name"] == "北京"
+    assert requests[0].url.params["count"] == "10"
     assert requests[0].url.params["language"] == "zh"
     assert requests[1].url.params["latitude"] == "39.9042"
     assert result["city"] == "北京市"
@@ -81,15 +84,85 @@ def test_weather_returns_compact_result(runtime_context):
 
     assert result == {
         "city": "北京市",
+        "region": "北京市",
         "country": "中国",
+        "latitude": 39.9042,
+        "longitude": 116.4074,
         "date": "2026-07-30",
         "weather": "阵雨",
         "weather_code": 80,
+        "weather_scope": "daily_most_severe_forecast",
+        "weather_note": "全天最严重天气预报，不代表全天持续或现场实况",
         "temperature_min_c": 24.1,
         "temperature_max_c": 31.5,
         "precipitation_probability_max": 65,
+        "data_type": "numerical_weather_prediction",
         "source": "Open-Meteo",
     }
+
+
+def test_weather_retries_full_chinese_city_with_pinyin_and_disambiguates(
+    runtime_context,
+):
+    requests = []
+    yichun_results = {
+        "results": [
+            {
+                "name": "伊春",
+                "country": "中国",
+                "admin1": "黑龙江",
+                "admin2": "伊春市",
+                "latitude": 47.72143,
+                "longitude": 128.87529,
+                "timezone": "Asia/Shanghai",
+            },
+            {
+                "name": "宜春明月山机场",
+                "country": "中国",
+                "admin1": "江西",
+                "admin2": "宜春市",
+                "feature_code": "AIRP",
+                "latitude": 27.80347,
+                "longitude": 114.3082,
+                "timezone": "Asia/Shanghai",
+            },
+            {
+                "name": "Yichun",
+                "country": "中国",
+                "admin1": "江西",
+                "admin2": "宜春市",
+                "feature_code": "PPLA2",
+                "population": 1045952,
+                "latitude": 27.83333,
+                "longitude": 114.4,
+                "timezone": "Asia/Shanghai",
+            },
+        ]
+    }
+
+    def handler(request):
+        requests.append(request)
+        if "geocoding-api" not in request.url.host:
+            return httpx.Response(200, json=forecast_payload())
+        if request.url.params["name"] == "yichun":
+            return httpx.Response(200, json=yichun_results)
+        return httpx.Response(200, json={"generationtime_ms": 0.1})
+
+    result = make_tool(handler).execute(
+        WeatherArgs(city="江西省宜春市", date="tomorrow"),
+        runtime_context,
+    )
+
+    geocoding_queries = [
+        request.url.params["name"]
+        for request in requests
+        if "geocoding-api" in request.url.host
+    ]
+    assert geocoding_queries == ["江西省宜春市", "宜春", "yichun"]
+    assert result["city"] == "宜春市"
+    assert result["region"] == "江西"
+    assert result["latitude"] == 27.83333
+    assert result["longitude"] == 114.4
 
 
 def test_weather_city_not_found(runtime_context):
@@ -99,6 +172,34 @@ def test_weather_city_not_found(runtime_context):
         tool.execute(WeatherArgs(city="不存在"), runtime_context)
 
     assert exc_info.value.code == "CITY_NOT_FOUND"
+
+
+def test_weather_missing_results_means_city_not_found(runtime_context):
+    tool = make_tool(
+        lambda _request: httpx.Response(
+            200,
+            json={"generationtime_ms": 0.1},
+        )
+    )
+
+    with pytest.raises(ToolExecutionError) as exc_info:
+        tool.execute(WeatherArgs(city="宜春"), runtime_context)
+
+    assert exc_info.value.code == "CITY_NOT_FOUND"
+
+
+def test_weather_invalid_geocoding_results(runtime_context):
+    tool = make_tool(
+        lambda _request: httpx.Response(
+            200,
+            json={"results": {"name": "北京"}},
+        )
+    )
+
+    with pytest.raises(ToolExecutionError) as exc_info:
+        tool.execute(WeatherArgs(city="北京"), runtime_context)
+
+    assert exc_info.value.code == "WEATHER_RESPONSE_INVALID"
 
 
 def test_weather_timeout(runtime_context):

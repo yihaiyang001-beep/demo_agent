@@ -48,6 +48,12 @@ class ContextManager:
         self.system_prompt = system_prompt
         self.compressor = ContextCompressor(llm_client)
 
+    def estimate_tokens(self, user_id: str, session_id: str) -> int:
+        """Estimate the current API context without compression or persistence."""
+        summary = self.summary_repo.get(user_id, session_id)
+        active_records = self._active_records(user_id, session_id, summary)
+        return self._estimate(self._build_messages(summary, active_records))
+
     def prepare(
         self,
         user_id: str,
@@ -306,4 +312,3 @@ class ContextManager:
                 separators=(",", ":"),
             )
         return truncated
-
